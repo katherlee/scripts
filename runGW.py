@@ -30,7 +30,7 @@ def run_GW(xyz_file, basis, gwsc, hartree_fock, beta, mode, nfreq, gfpower, gfun
 
 def run_H_point(n, r, basis="sto6g", mode="GW", basename=None, basedir="/tmp", beta=100, nfreq=1024, gfpower=12, gfuni=256, save=False, bohr=True, gwsc="gwsc", hartree_fock="hartree-fock"):
     if not basename:
-        basename = "H%d_r%.2f_%s_%s" % (n, r, basis, mode)
+        basename = "H%d_r%.2f_n%d_beta%d_%s_%s" % (n, r, nfreq, beta,  basis, mode)
     cur_dir = os.getcwd()
     logfile = cur_dir+'/'+basename+'.log'
     work_dir = '/'.join([basedir, basename])
