@@ -24,7 +24,7 @@ def run_GW(xyz_file, basis, gwsc, hartree_fock, beta, mode, nfreq, gfpower, gfun
     if not log:
         log = os.devnull
     logf = open(log, 'w')
-    call([gwsc, "--BASIS="+basis, "--XYZ="+xyz_file, "--libint="+hartree_fock, "--MODE="+mode, "--NMATSUBARA=%d" % (nfreq), "--GFPOWER=%d" % gfpower, "--GFUNIFORM=%d" % gfuni], shell=False, stdout=logf)
+    call([gwsc, "--BASIS="+basis, "--XYZ="+xyz_file, "--libint="+hartree_fock, "--MODE="+mode, "--NMATSUBARA=%d" % (nfreq), "--GFPOWER=%d" % gfpower, "--GFUNIFORM=%d" % gfuni], shell=False, stdout=logf, stderr=logf)
     if log:
         logf.close()
     return collect_energy("Energy_"+mode+".dat")
@@ -63,6 +63,7 @@ if __name__ == "__main__":
     parser.add_argument("--gfpower", help="number of gf power mesh", type=int, default=12)
     parser.add_argument("--gfuni", help="number of gf uniform mesh", type=int, default=256)
     parser.add_argument("-o", "--out", help="Output filename")
+    parser.add_argument("--prec", help="Dyson precision", type=float, default=1e-7)
 
     args = parser.parse_args()
     cur_dir = os.getcwd()
