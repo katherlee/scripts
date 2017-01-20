@@ -20,16 +20,19 @@ def collect_energy(filename):
     data = np.loadtxt(filename)
     return data[-1]
 
-def run_GW(xyz_file, basis, gwsc, hartree_fock, beta, mode, nfreq, gfpower, gfuni, log=None):
+def run_GW(xyz_file, basis, gwsc, hartree_fock, beta, mode, nfreq, gfpower, gfuni, log=None, pauli=False):
     if not log:
         log = os.devnull
     logf = open(log, 'w')
-    call([gwsc, "--BASIS="+basis, "--XYZ="+xyz_file, "--libint="+hartree_fock, "--MODE="+mode, "--NMATSUBARA=%d" % (nfreq), "--GFPOWER=%d" % gfpower, "--GFUNIFORM=%d" % gfuni], shell=False, stdout=logf, stderr=logf)
+    exec_params = [gwsc, "--BASIS="+basis, "--XYZ="+xyz_file, "--libint="+hartree_fock, "--MODE="+mode, "--NMATSUBARA=%d" % (nfreq), "--GFPOWER=%d" % gfpower, "--GFUNIFORM=%d" % gfuni]
+    if pauli:
+        exec_params.append("--PAULI=true")
+    call(exec_params, shell=False, stdout=logf, stderr=logf)
     if log:
         logf.close()
     return collect_energy("Energy_"+mode+".dat")
 
-def run_H_point(n, r, basis="sto6g", mode="GW", basename=None, basedir="/tmp", beta=100, nfreq=1024, gfpower=12, gfuni=256, save=False, bohr=True, gwsc="gwsc", hartree_fock="hartree-fock"):
+def run_H_point(n, r, basis="sto6g", mode="GW", basename=None, basedir="/tmp", beta=100, nfreq=1024, gfpower=12, gfuni=256, save=False, bohr=True, gwsc="gwsc", hartree_fock="hartree-fock", pauli=False):
     if not basename:
         basename = "H%d_r%.2f_n%d_beta%d_%s_%s" % (n, r, nfreq, beta,  basis, mode)
     cur_dir = os.getcwd()
@@ -39,7 +42,7 @@ def run_H_point(n, r, basis="sto6g", mode="GW", basename=None, basedir="/tmp", b
     os.system("mkdir -p " + work_dir)
     os.chdir(work_dir)
     Gen_H_chain_xyz(r, n, xyz_file, bohr)
-    energy = run_GW(xyz_file, basis, gwsc=gwsc, hartree_fock=hartree_fock, beta=beta, nfreq=nfreq, mode=mode, gfpower=gfpower, gfuni=gfuni, log=logfile)
+    energy = run_GW(xyz_file, basis, gwsc=gwsc, hartree_fock=hartree_fock, beta=beta, nfreq=nfreq, mode=mode, gfpower=gfpower, gfuni=gfuni, log=logfile, pauli=pauli)
     os.chdir(cur_dir)
     if not save:
         rmtree(work_dir)
