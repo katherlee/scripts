@@ -31,7 +31,9 @@ class HubbardHamiltonian:
 
         self.alist_diag = list(map(self.transform_to_diag, self.alist))
         self.clist_diag = list(map(self.transform_to_diag, self.clist))
-        self.nlist_diag = [c.dot(a) for c, a in zip(self.clist_diag, self.alist_diag)]
+        self.nlist_diag = [
+            c.dot(a) for c, a in zip(self.clist_diag, self.alist_diag)
+        ]
 
         self.beta = beta
         self.ntau = ntau
@@ -123,7 +125,13 @@ class HubbardHamiltonian:
     def get_hifreq_moments(self):
         c1 = np.eye(self.nflavors)
         dens = np.diag(self.get_density_mat())
-        c2 = la.block_diag(self.t, self.t) - self.mu * np.eye(self.nflavors) - self.U * np.diag(
-            np.roll(dens, int(self.nflavors / 2)))
-        c3 = c2.dot(c2) + self.U ** 2 * (self.get_density_corr() - np.outer(dens, dens))
+        nsites = self.nflavors // 2
+        c2 = la.block_diag(self.t, self.t) - self.mu * np.eye(
+            self.nflavors) + self.U * np.diag(np.roll(dens, nsites))
+        c3 = c2.dot(c2) + self.U**2 * np.roll(
+            np.roll(
+                self.get_density_corr() - np.outer(dens, dens), nsites,
+                axis=0),
+            nsites,
+            axis=1)
         return [c1, c2, c3]
