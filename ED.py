@@ -2,7 +2,34 @@ from __future__ import division, print_function
 import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
-import sys
+import h5py as h5
+from h5archive import gf
+
+
+def write_tau_gf(fname, path, data, beta, stat='fermi'):
+    f = h5.File(fname)
+    qtty = gf.new_quantity(f, path)
+    ntau, n1, n2 = data.shape
+    gf.new_mesh_group(qtty, 3)
+    gf.new_tau_mesh(qtty, 1, ntau=ntau, beta=beta, stat=stat)
+    gf.new_index_mesh(qtty, 2, n1)
+    gf.new_index_mesh(qtty, 3, n2)
+    gf.new_data(qtty, data)
+    f.close()
+
+
+def write_iw_gf(fname, path, data, beta, tails=None, stat='fermi'):
+    f = h5.File(fname)
+    qtty = gf.new_quantity(f, path)
+    niw, n1, n2 = data.shape
+    gf.new_mesh_group(qtty, 3)
+    gf.new_matsubara_mesh(qtty, 1, niw=niw, beta=beta, full=False, stat=stat)
+    gf.new_index_mesh(qtty, 2, n1)
+    gf.new_index_mesh(qtty, 3, n2)
+    gf.new_data(qtty, data)
+    if tails:
+        gf.new_inftail(qtty, tails)
+    f.close()
 
 
 def gen_annihilators(nflavors):
@@ -22,8 +49,15 @@ def gen_annihilators(nflavors):
 
 
 class HubbardHamiltonian:
-    def __init__(self, t_matrix, mu, U, beta=10, ntau=100, niw=100):
-        self.build_ham(t_matrix, mu, U)
+    def __init__(self,
+                 t_matrix,
+                 mu,
+                 U,
+                 beta=10,
+                 ntau=100,
+                 niw=100,
+                 shift=False):
+        self.build_ham(t_matrix, mu, U, shift)
         ham = self.ham_total()
         e, V = la.eigh(self.ham_total())
         self.eigval = e - e.min()
@@ -41,11 +75,22 @@ class HubbardHamiltonian:
         self.Z = np.exp(-beta * self.eigval).sum()
 
         self.tau_grid = np.arange(ntau + 1) * beta / ntau
-        self.iw_grid = (np.arange(niw) * 2 + 1) * np.pi / beta
+        self.iwf_grid = (np.arange(niw) * 2 + 1) * np.pi / beta
+        self.iwb_grid = (np.arange(niw) * 2) * np.pi / beta
         self.gtau_vals = np.asarray(list(map(self.get_gtau, self.tau_grid)))
-        self.giw_vals = np.asarray(list(map(self.get_giw, self.iw_grid)))
+        self.giw_vals = np.asarray(list(map(self.get_giw, self.iwf_grid)))
 
-    def build_ham(self, t_matrix, mu, U):
+        self.chi_tau_vals = np.asarray(
+            list(map(self.get_chi_tau, self.tau_grid)))
+        self.chi_iw_vals = np.asarray(
+            list(map(self.get_chi_iw, self.iwb_grid)))
+
+        self.W_tau_vals = np.asarray(
+            list(map(self.get_W_from_chi, self.chi_tau_vals)))
+        self.W_iw_vals = np.asarray(
+            list(map(self.get_W_from_chi, self.chi_iw_vals)))
+
+    def build_ham(self, t_matrix, mu, U, shift):
         t_matrix = np.asmatrix(t_matrix)
         assert la.norm(t_matrix - t_matrix.H) < 1.0e-16
         nsites = t_matrix.shape[0]
@@ -57,7 +102,7 @@ class HubbardHamiltonian:
         ham_kin = 0
         for i in range(nsites):
             for j in range(nsites):
-                ham_kin += t_matrix[i, j] * (
+                ham_kin -= t_matrix[i, j] * (
                     clist[i] * alist[j] + clist[i + nsites] * alist[j +
                                                                     nsites])
 
@@ -66,11 +111,14 @@ class HubbardHamiltonian:
             ham_int += U * nlist[i] * nlist[i + nsites]
 
         ham_mu = -mu * sum(nlist)
+        if shift:
+            ham_mu -= U / 2 * sum(nlist)
 
         self.t = t_matrix
         self.U = U
         self.mu = mu
         self.nflavors = nflavors
+        self.nsites = nsites
         self.alist = alist
         self.clist = clist
         self.nlist = nlist
@@ -122,16 +170,48 @@ class HubbardHamiltonian:
                          np.asarray(self.nlist_diag),
                          np.asarray(self.nlist_diag)) / self.Z
 
-    def get_hifreq_moments(self):
+    def get_g_moments(self):
         c1 = np.eye(self.nflavors)
         dens = np.diag(self.get_density_mat())
         nsites = self.nflavors // 2
         c2 = la.block_diag(self.t, self.t) - self.mu * np.eye(
             self.nflavors) + self.U * np.diag(np.roll(dens, nsites))
-        c3 = c2.dot(c2) + self.U**2 * np.roll(
-            np.roll(
-                self.get_density_corr() - np.outer(dens, dens), nsites,
-                axis=0),
-            nsites,
-            axis=1)
-        return [c1, c2, c3]
+        # c3 = c2.dot(c2) + self.U**2 * np.roll(
+        #     np.roll(
+        #         self.get_density_corr() - np.outer(dens, dens), nsites,
+        #         axis=0),
+        #     nsites,
+        #     axis=1)
+        return [c1, c2]
+
+    def get_chi_tau(self, tau):
+        evolv1 = np.exp(-tau * self.eigval)
+        evolv2 = np.exp(-(self.beta - tau) * self.eigval)
+        dens = np.diag(self.get_density_mat())
+        return np.einsum('a, iab, b, jba -> ij', evolv2,
+                         np.asarray(self.nlist_diag), evolv1,
+                         np.asarray(self.nlist_diag)) / self.Z - np.outer(
+                             dens, dens)
+
+    def get_chi_iw(self, w):
+        boltz = np.exp(-self.beta * self.eigval)
+        pref = (boltz[None, :] - boltz[:, None]) / (
+            1j * w + self.eigval[:, None] - self.eigval[None, :])
+        if w == 0:
+            tmp = np.tile(self.eigval, (self.eigval.size, 1)).astype(complex)
+            tmp[self.eigval[:, None] !=
+                self.eigval[None, :]] = pref[self.eigval[:, None] !=
+                                             self.eigval[None, :]]
+            pref = tmp
+        return np.einsum('ab, iab, jba -> ij', pref,
+                         np.asarray(self.nlist_diag),
+                         np.asarray(self.nlist_diag)) / self.Z
+
+    def get_hubbard_umatrix(self, U):
+        zero = np.zeros((self.nsites, self.nsites))
+        eye = np.eye(self.nsites)
+        return np.bmat([[zero, eye * U / 2], [eye * U / 2, zero]])
+
+    def get_W_from_chi(self, chival):
+        umat = self.get_hubbard_umatrix(self.U)
+        return np.einsum('ab, bc, cd -> ad', umat, chival, umat)
