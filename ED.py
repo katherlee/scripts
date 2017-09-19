@@ -60,8 +60,7 @@ def umat_dd_to_full(umat):
     it = np.nditer(umat, flags=['multi_index'])
     while not it.finished:
         i, j = it.multi_index
-        tens[i,i,j,j] = it[0] / 2
-        tens[i,j,i,j] = -it[0] / 2
+        tens[i,i,j,j] = it[0]
         it.iternext()
     return tens
 
@@ -98,7 +97,7 @@ class HubbardHamiltonian:
 
         self.chi_tau_vals = np.array([self.get_chi_tau(t) for t in self.tau_grid])
         self.chi_iw_vals = np.array([self.get_chi_iw(w) for w in self.iwb_grid])
-        
+
         self.chi4_tau_vals = np.array([self.get_chi4_tau(t) for t in self.tau_grid])
         self.chi4_iw_vals = np.array([self.get_chi4_iw(w) for w in self.iwb_grid])
 
@@ -121,12 +120,12 @@ class HubbardHamiltonian:
         self.clist = np.array(clist)
         self.nlist = np.array(nlist)
 
-        ham_kin = -np.einsum('ij,iab,jbc -> ac', 
-                             la.block_diag(t_matrix, t_matrix), 
+        ham_kin = -np.einsum('ij,iab,jbc -> ac',
+                             la.block_diag(t_matrix, t_matrix),
                              self.clist, self.alist)
 
-        ham_int = U * np.einsum('iab,ibc -> ac', 
-                                self.nlist[:nsites,...], 
+        ham_int = U * np.einsum('iab,ibc -> ac',
+                                self.nlist[:nsites,...],
                                 self.nlist[nsites:,...])
 
         if shift:
@@ -151,7 +150,7 @@ class HubbardHamiltonian:
     def transform_to_diag(self, matrix):
         return np.einsum('ab,...bc,cd->...ad', self.eigvec.conj().T, matrix, self.eigvec)
         #return self.eigvec.H * matrix * self.eigvec
-    
+
     def get_energy(self):
         return np.sum(np.exp(-self.beta*self.eigval) * self.eigval) / self.Z + self.eigmin
 
@@ -267,13 +266,22 @@ class HubbardHamiltonian:
         eye = np.eye(self.nsites)
         return np.bmat([[zero, eye * U], [eye * U, zero]])
 
+    def umat_dd_to_full(self, umat):
+        tens = np.zeros((*umat.shape, *umat.shape))
+        it = np.nditer(umat, flags=['multi_index'])
+        while not it.finished:
+            i, j = it.multi_index
+            tens[i,i,j,j] = it[0]
+            it.iternext()
+        return tens
+
     def get_W_from_chi(self, chival):
         umat = self.get_hubbard_umatrix(self.U)
-        return np.einsum('ab,...bc, cd ->...ad', umat, chival, umat)
+        return -np.einsum('ab,...bc, cd ->...ad', umat, chival, umat)
 
     def get_W_from_chi4(self, chi4val):
-        utens = umat_dd_to_full(self.get_hubbard_umatrix(self.U))
-        return -np.einsum('ijKL,...KLIJ,IJkl->...ijkl', utens, chi4val, utens)
+        utens = self.umat_dd_to_full(self.get_hubbard_umatrix(self.U))
+        return -np.einsum('ijKL,...KL IJ,IJkl->...ijkl', utens, chi4val, utens)
 
     def get_W_moments(self):
         umat = self.get_hubbard_umatrix(self.U)
@@ -283,7 +291,7 @@ class HubbardHamiltonian:
         tca = np.asarray(tmat) * rho
         c2 = tca + tca.T - np.diag(np.sum(tca, axis=0) + np.sum(tca, axis=1))
         c2 = np.einsum('ab, bc, cd -> ad', umat, c2, umat)
-        return [c1, c2]
+        return [-c1, -c2]
 
     def write_g(self, fname):
         write_tau_gf(
